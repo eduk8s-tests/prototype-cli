@@ -497,6 +497,108 @@ _resource_budgets = {
 }
 
 
+def _setup_limits_and_quotas(
+    ctx, client, spawner_namespace, target_namespace, role, budget
+):
+    limit_range_resource = _resource_type(ctx, client, "v1", "LimitRange")
+    resource_quota_resource = _resource_type(ctx, client, "v1", "ResourceQuota")
+    role_binding_resource = _resource_type(
+        ctx, client, "rbac.authorization.k8s.io/v1", "RoleBinding"
+    )
+
+    # Create role binding in the project so the users service account
+    # can create resources in it.
+
+    role_binding_body = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "RoleBinding",
+        "metadata": {"name": "eduk8s"},
+        "roleRef": {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "ClusterRole",
+            "name": f"{role}",
+        },
+        "subjects": [
+            {
+                "kind": "ServiceAccount",
+                "name": "eduk8s",
+                "namespace": f"{spawner_namespace}",
+            }
+        ],
+    }
+
+    role_binding_resource.create(namespace=target_namespace, body=role_binding_body)
+
+    # Determine what project namespace resources need to be used.
+
+    if budget != "unlimited":
+        if budget not in _resource_budgets:
+            budget = "default"
+        elif not _resource_budgets[budget]:
+            budget = "default"
+
+    if budget not in ("default", "unlimited"):
+        budget_item = _resource_budgets[budget]
+
+        resource_limits_definition = budget_item["resource-limits"]
+        compute_resources_definition = budget_item["compute-resources"]
+        compute_resources_timebound_definition = budget_item[
+            "compute-resources-timebound"
+        ]
+        object_counts_definition = budget_item["object-counts"]
+
+    # Delete any limit ranges applied to the project that may conflict
+    # with the limit range being applied. For the case of unlimited, we
+    # delete any being applied but don't replace it.
+
+    if budget != "default":
+        limit_ranges = limit_range_resource.get(namespace=target_namespace)
+
+        for limit_range in limit_ranges.items:
+            limit_range_resource.delete(
+                namespace=target_namespace, name=limit_range.metadata.name
+            )
+
+    # Create limit ranges for the project namespace so any deployments
+    # will have default memory/cpu min and max values.
+
+    if budget not in ("default", "unlimited"):
+        resource_limits_body = resource_limits_definition
+        limit_range_resource.create(
+            namespace=target_namespace, body=resource_limits_body
+        )
+
+    # Delete any resource quotas applied to the project namespace that
+    # may conflict with the resource quotas being applied.
+
+    if budget != "default":
+        resource_quotas = resource_quota_resource.get(namespace=target_namespace)
+
+        for resource_quota in resource_quotas.items:
+            resource_quota_resource.delete(
+                namespace=target_namespace, name=resource_quota.metadata.name
+            )
+
+    # Create resource quotas for the project so there is a maximum for
+    # what resources can be used.
+
+    if budget not in ("default", "unlimited"):
+        resource_quota_body = compute_resources_definition
+        resource_quota_resource.create(
+            namespace=target_namespace, body=resource_quota_body
+        )
+
+        resource_quota_body = compute_resources_timebound_definition
+        resource_quota_resource.create(
+            namespace=target_namespace, body=resource_quota_body
+        )
+
+        resource_quota_body = object_counts_definition
+        resource_quota_resource.create(
+            namespace=target_namespace, body=resource_quota_body
+        )
+
+
 @group_session.command("deploy")
 @click.pass_context
 @click.argument("name", required=False)
@@ -510,12 +612,7 @@ def command_session_deploy(ctx, name):
     client = kube.client()
 
     deployment_resource = _resource_type(ctx, client, "apps/v1", "Deployment")
-    limit_range_resource = _resource_type(ctx, client, "v1", "LimitRange")
     namespace_resource = _resource_type(ctx, client, "v1", "Namespace")
-    resource_quota_resource = _resource_type(ctx, client, "v1", "ResourceQuota")
-    role_binding_resource = _resource_type(
-        ctx, client, "rbac.authorization.k8s.io/v1", "RoleBinding"
-    )
     secret_resource = _resource_type(ctx, client, "v1", "Secret")
     service_resource = _resource_type(ctx, client, "v1", "Service")
     service_account_resource = _resource_type(ctx, client, "v1", "ServiceAccount")
@@ -610,7 +707,7 @@ def command_session_deploy(ctx, name):
 
         break
 
-    # Create service account, role and rolebinding in namespace.
+    # Create service account under which the workshop runs.
 
     service_account_body = {
         "apiVersion": "v1",
@@ -620,84 +717,14 @@ def command_session_deploy(ctx, name):
 
     service_account_resource.create(namespace=session_name, body=service_account_body)
 
-    role_binding_body = {
-        "apiVersion": "rbac.authorization.k8s.io/v1",
-        "kind": "RoleBinding",
-        "metadata": {"name": "eduk8s"},
-        "roleRef": {
-            "apiGroup": "rbac.authorization.k8s.io",
-            "kind": "ClusterRole",
-            "name": "admin",
-        },
-        "subjects": [
-            {"kind": "ServiceAccount", "name": "eduk8s", "namespace": f"{session_name}"}
-        ],
-    }
+    # Setup project namespace limit ranges and resource quotas.
 
-    role_binding_resource.create(namespace=session_name, body=role_binding_body)
+    default_role = workshop_definition.spec.role or "admin"
+    default_budget = workshop_definition.spec.budget or "default"
 
-    # Determine what project namespace resources need to be used.
-
-    budget = workshop_definition.spec.budget or "default"
-
-    if budget != "unlimited":
-        if budget not in _resource_budgets:
-            budget = "default"
-        elif not _resource_budgets[budget]:
-            budget = "default"
-
-    if budget not in ("default", "unlimited"):
-        budget_item = _resource_budgets[budget]
-
-        resource_limits_definition = budget_item["resource-limits"]
-        compute_resources_definition = budget_item["compute-resources"]
-        compute_resources_timebound_definition = budget_item[
-            "compute-resources-timebound"
-        ]
-        object_counts_definition = budget_item["object-counts"]
-
-    # Delete any limit ranges applied to the project that may conflict
-    # with the limit range being applied. For the case of unlimited, we
-    # delete any being applied but don't replace it.
-
-    if budget != "default":
-        limit_ranges = limit_range_resource.get(namespace=session_name)
-
-        for limit_range in limit_ranges.items:
-            limit_range_resource.delete(
-                namespace=session_name, name=limit_range.metadata.name
-            )
-
-    # Create limit ranges for the project namespace so any deployments
-    # will have default memory/cpu min and max values.
-
-    if budget not in ("default", "unlimited"):
-        resource_limits_body = resource_limits_definition
-        limit_range_resource.create(namespace=session_name, body=resource_limits_body)
-
-    # Delete any resource quotas applied to the project namespace that
-    # may conflict with the resource quotas being applied.
-
-    if budget != "default":
-        resource_quotas = resource_quota_resource.get(namespace=session_name)
-
-        for resource_quota in resource_quotas.items:
-            resource_quota_resource.delete(
-                namespace=session_name, name=resource_quota.metadata.name
-            )
-
-    # Create resource quotas for the project so there is a maximum for
-    # what resources can be used.
-
-    if budget not in ("default", "unlimited"):
-        resource_quota_body = compute_resources_definition
-        resource_quota_resource.create(namespace=session_name, body=resource_quota_body)
-
-        resource_quota_body = compute_resources_timebound_definition
-        resource_quota_resource.create(namespace=session_name, body=resource_quota_body)
-
-        resource_quota_body = object_counts_definition
-        resource_quota_resource.create(namespace=session_name, body=resource_quota_body)
+    _setup_limits_and_quotas(
+        ctx, client, session_name, session_name, default_role, default_budget
+    )
 
     # Create the additional resources required for the workshop.
 
@@ -737,13 +764,14 @@ def command_session_deploy(ctx, name):
                 )
             ]
 
-        namespace = body.metadata.get("namespace", session_name)
-
         body = ResourceInstance(client, body).to_dict()
 
         def _substitute_variables(obj):
             if isinstance(obj, str):
-                return obj.replace("$(session_name)", session_name)
+                obj = obj.replace("$(spawner_namespace)", session_name)
+                obj = obj.replace("$(project_namespace)", session_name)
+                obj = obj.replace("$(service_account)", "eduk8s")
+                return obj
             elif isinstance(obj, dict):
                 return {k: _substitute_variables(v) for k, v in obj.items()}
             elif isinstance(obj, list):
@@ -755,7 +783,19 @@ def command_session_deploy(ctx, name):
 
         resource = client.resources.get(api_version=api_version, kind=kind)
 
+        namespace = body["metadata"].get("namespace", session_name)
+
         resource.create(namespace=namespace, body=body)
+
+        if kind.lower() == "namespace":
+            annotations = body["metadata"].get("annotations", {})
+
+            role = annotations.get("session/role", default_role)
+            budget = annotations.get("session/budget", default_budget)
+
+            _setup_limits_and_quotas(
+                ctx, client, session_name, body["metadata"]["name"], role, budget
+            )
 
     # Deploy the actual workshop dashboard for the workshop.
 
