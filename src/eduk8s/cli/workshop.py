@@ -137,12 +137,12 @@ def command_workshop_enable(ctx, name):
         ctx.fail(e.reason)
 
 
-@group_workshop.command("remove")
+@group_workshop.command("delete")
 @click.pass_context
 @click.argument("name")
-def command_workshop_remove(ctx, name):
+def command_workshop_delete(ctx, name):
     """
-    Remove the custom resource describing a workshop.
+    Delete the custom resource describing a workshop.
     """
 
     client = kube.client()
