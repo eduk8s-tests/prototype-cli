@@ -500,13 +500,7 @@ _resource_budgets = {
 @group_session.command("deploy")
 @click.pass_context
 @click.argument("name", required=False)
-@click.option(
-    "-n",
-    "--namespace",
-    default="default",
-    help="The namespace scope for this CLI request",
-)
-def command_session_deploy(ctx, name, namespace):
+def command_session_deploy(ctx, name):
     """
     Deploy an instance of a workshop.
     """
@@ -536,7 +530,7 @@ def command_session_deploy(ctx, name, namespace):
     # Verify workshop definition exists and is enabled for use.
 
     try:
-        workshop_definition = workshop_resource.get(namespace=namespace, name=name)
+        workshop_definition = workshop_resource.get(name=name)
     except ApiException as e:
         if e.status == 404:
             ctx.fail("Workshop with name %r does not exist." % name)
