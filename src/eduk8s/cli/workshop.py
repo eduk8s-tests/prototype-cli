@@ -43,7 +43,10 @@ def group_workshop(ctx):
 @click.option(
     "-f", "--filename", default=None, help="File contains the workshop to import.",
 )
-def command_workshop_import(ctx, url, filename):
+@click.option(
+    "--name", default=None, help="Set name to use for the workshop.",
+)
+def command_workshop_import(ctx, url, filename, name):
     """
     Import custom resource describing a workshop.
     """
@@ -72,9 +75,36 @@ def command_workshop_import(ctx, url, filename):
         ctx, client, "training.eduk8s.io/v1alpha1", "Workshop"
     )
 
-    result = workshop_resource.create(body=body)
+    if name:
+        body["metadata"]["name"] = name
 
-    click.echo("workshop.training.eduk8s.io/%s created" % result.metadata.name)
+    workshop_instance = workshop_resource.create(body=body)
+
+    namespace_resource = _resource_type(ctx, client, "v1", "Namespace")
+
+    namespace_body = {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "name": f"{workshop_instance.metadata.name}",
+            "ownerReferences": [
+                {
+                    "apiVersion": "training.eduk8s.io/v1alpha1",
+                    "kind": "Workshop",
+                    "blockOwnerDeletion": True,
+                    "controller": True,
+                    "name": f"{workshop_instance.metadata.name}",
+                    "uid": f"{workshop_instance.metadata.uid}",
+                }
+            ],
+        },
+    }
+
+    namespace_resource.create(body=namespace_body)
+
+    click.echo(
+        "workshop.training.eduk8s.io/%s created" % workshop_instance.metadata.name
+    )
 
 
 @group_workshop.command("enable")

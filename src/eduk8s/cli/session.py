@@ -498,7 +498,7 @@ _resource_budgets = {
 
 
 def _setup_limits_and_quotas(
-    ctx, client, spawner_namespace, target_namespace, role, budget
+    ctx, client, spawner_namespace, target_namespace, service_account, role, budget
 ):
     limit_range_resource = _resource_type(ctx, client, "v1", "LimitRange")
     resource_quota_resource = _resource_type(ctx, client, "v1", "ResourceQuota")
@@ -521,7 +521,7 @@ def _setup_limits_and_quotas(
         "subjects": [
             {
                 "kind": "ServiceAccount",
-                "name": "eduk8s",
+                "name": f"{service_account}",
                 "namespace": f"{spawner_namespace}",
             }
         ],
@@ -627,17 +627,19 @@ def command_session_deploy(ctx, name):
     # Verify workshop definition exists and is enabled for use.
 
     try:
-        workshop_definition = workshop_resource.get(name=name)
+        workshop_instance = workshop_resource.get(name=name)
     except ApiException as e:
         if e.status == 404:
             ctx.fail("Workshop with name %r does not exist." % name)
         raise
 
-    if not workshop_definition.status or not workshop_definition.status.enabled:
+    if not workshop_instance.status or not workshop_instance.status.enabled:
         ctx.fail("Workshop with name %r is not enabled." % name)
 
     # Create session object to act as owner for workshop resources
     # and create the corresponding namespace as well.
+
+    spawner_namespace = name
 
     random_userid_chars = "bcdfghjklmnpqrstvwxyz0123456789"
 
@@ -654,17 +656,29 @@ def command_session_deploy(ctx, name):
         session_body = {
             "apiVersion": "training.eduk8s.io/v1alpha1",
             "kind": "Session",
-            "metadata": {"name": f"{session_name}"},
+            "metadata": {
+                "name": f"{session_name}",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "training.eduk8s.io/v1alpha1",
+                        "kind": "Workshop",
+                        "blockOwnerDeletion": True,
+                        "controller": True,
+                        "name": f"{workshop_instance.metadata.name}",
+                        "uid": f"{workshop_instance.metadata.uid}",
+                    }
+                ],
+            },
             "spec": {
-                "vendor": f"{workshop_definition.spec.vendor}",
+                "vendor": f"{workshop_instance.spec.vendor}",
                 "name": f"{name}",
-                "title": f"{workshop_definition.spec.title}",
-                "description": f"{workshop_definition.spec.description}",
-                "url": f"{workshop_definition.spec.url}",
-                "image": f"{workshop_definition.spec.image}",
-                "budget": f"{workshop_definition.spec.budget or 'default'}",
-                "duration": f"{workshop_definition.spec.timeout or '0'}",
-                "timeout": f"{workshop_definition.spec.timeout or '0'}",
+                "title": f"{workshop_instance.spec.title}",
+                "description": f"{workshop_instance.spec.description}",
+                "url": f"{workshop_instance.spec.url}",
+                "image": f"{workshop_instance.spec.image}",
+                "budget": f"{workshop_instance.spec.budget or 'default'}",
+                "duration": f"{workshop_instance.spec.timeout or '0'}",
+                "timeout": f"{workshop_instance.spec.timeout or '0'}",
             },
         }
 
@@ -678,18 +692,20 @@ def command_session_deploy(ctx, name):
             else:
                 raise
 
+        project_namespace = session_name
+
         namespace_body = {
             "apiVersion": "v1",
             "kind": "Namespace",
             "metadata": {
-                "name": f"{session_name}",
+                "name": f"{project_namespace}",
                 "ownerReferences": [
                     {
                         "apiVersion": "training.eduk8s.io/v1alpha1",
                         "kind": "Session",
                         "blockOwnerDeletion": True,
                         "controller": True,
-                        "name": f"{session_name}",
+                        "name": f"{session_instance.metadata.name}",
                         "uid": f"{session_instance.metadata.uid}",
                     }
                 ],
@@ -709,21 +725,31 @@ def command_session_deploy(ctx, name):
 
     # Create service account under which the workshop runs.
 
+    service_account = session_name
+
     service_account_body = {
         "apiVersion": "v1",
         "kind": "ServiceAccount",
-        "metadata": {"name": "eduk8s"},
+        "metadata": {"name": f"{service_account}"},
     }
 
-    service_account_resource.create(namespace=session_name, body=service_account_body)
+    service_account_resource.create(
+        namespace=spawner_namespace, body=service_account_body
+    )
 
     # Setup project namespace limit ranges and resource quotas.
 
-    default_role = workshop_definition.spec.role or "admin"
-    default_budget = workshop_definition.spec.budget or "default"
+    default_role = workshop_instance.spec.role or "admin"
+    default_budget = workshop_instance.spec.budget or "default"
 
     _setup_limits_and_quotas(
-        ctx, client, session_name, session_name, default_role, default_budget
+        ctx,
+        client,
+        spawner_namespace,
+        project_namespace,
+        service_account,
+        default_role,
+        default_budget,
     )
 
     # Create the additional resources required for the workshop.
@@ -748,7 +774,7 @@ def command_session_deploy(ctx, name):
 
     namespaced_resources = set(_namespaced_resources())
 
-    for body in workshop_definition.spec.resources:
+    for body in workshop_instance.spec.resources:
         kind = body.kind
         api_version = body.apiVersion
 
@@ -759,7 +785,7 @@ def command_session_deploy(ctx, name):
                     kind="Session",
                     blockOwnerDeletion=True,
                     controller=True,
-                    name=session_name,
+                    name=session_instance.metadata.name,
                     uid=session_instance.metadata.uid,
                 )
             ]
@@ -768,9 +794,9 @@ def command_session_deploy(ctx, name):
 
         def _substitute_variables(obj):
             if isinstance(obj, str):
-                obj = obj.replace("$(spawner_namespace)", session_name)
-                obj = obj.replace("$(project_namespace)", session_name)
-                obj = obj.replace("$(service_account)", "eduk8s")
+                obj = obj.replace("$(spawner_namespace)", spawner_namespace)
+                obj = obj.replace("$(project_namespace)", project_namespace)
+                obj = obj.replace("$(service_account)", service_account)
                 return obj
             elif isinstance(obj, dict):
                 return {k: _substitute_variables(v) for k, v in obj.items()}
@@ -783,9 +809,9 @@ def command_session_deploy(ctx, name):
 
         resource = client.resources.get(api_version=api_version, kind=kind)
 
-        namespace = body["metadata"].get("namespace", session_name)
+        target_namespace = body["metadata"].get("namespace", project_namespace)
 
-        resource.create(namespace=namespace, body=body)
+        resource.create(namespace=target_namespace, body=body)
 
         if kind.lower() == "namespace":
             annotations = body["metadata"].get("annotations", {})
@@ -793,8 +819,10 @@ def command_session_deploy(ctx, name):
             role = annotations.get("session/role", default_role)
             budget = annotations.get("session/budget", default_budget)
 
+            namespace = body["metadata"]["name"]
+
             _setup_limits_and_quotas(
-                ctx, client, session_name, body["metadata"]["name"], role, budget
+                ctx, client, spawner_namespace, namespace, service_account, role, budget
             )
 
     # Deploy the actual workshop dashboard for the workshop.
@@ -805,12 +833,12 @@ def command_session_deploy(ctx, name):
         "metadata": {"name": "kubernetes-dashboard-csrf"},
     }
 
-    secret_resource.create(namespace=session_name, body=secret_body)
+    secret_resource.create(namespace=project_namespace, body=secret_body)
 
     deployment_body = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
-        "metadata": {"name": "workshop"},
+        "metadata": {"name": f"{session_name}"},
         "spec": {
             "replicas": 1,
             "selector": {"matchLabels": {"deployment": "workshop"}},
@@ -818,13 +846,19 @@ def command_session_deploy(ctx, name):
             "template": {
                 "metadata": {"labels": {"deployment": "workshop"}},
                 "spec": {
-                    "serviceAccountName": "eduk8s",
+                    "serviceAccountName": f"{service_account}",
                     "containers": [
                         {
                             "name": "dashboard",
-                            "image": f"{workshop_definition.spec.image}",
+                            "image": f"{workshop_instance.spec.image}",
                             "imagePullPolicy": "Always",
                             "ports": [{"containerPort": 10080, "protocol": "TCP"}],
+                            "env": [
+                                {
+                                    "name": "PROJECT_NAMESPACE",
+                                    "value": f"{project_namespace}",
+                                }
+                            ],
                         }
                     ],
                 },
@@ -832,12 +866,12 @@ def command_session_deploy(ctx, name):
         },
     }
 
-    deployment_resource.create(namespace=session_name, body=deployment_body)
+    deployment_resource.create(namespace=spawner_namespace, body=deployment_body)
 
     service_body = {
         "apiVersion": "v1",
         "kind": "Service",
-        "metadata": {"name": "workshop"},
+        "metadata": {"name": f"{session_name}"},
         "spec": {
             "type": "ClusterIP",
             "ports": [{"port": 10080, "protocol": "TCP", "targetPort": 10080}],
@@ -845,7 +879,7 @@ def command_session_deploy(ctx, name):
         },
     }
 
-    service_resource.create(namespace=session_name, body=service_body)
+    service_resource.create(namespace=spawner_namespace, body=service_body)
 
     click.echo("session.training.eduk8s.io/%s created" % session_name)
 
