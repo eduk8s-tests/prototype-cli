@@ -972,14 +972,17 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     click.echo(f"session.training.eduk8s.io/{session_name} created")
 
-    if username:
-        click.echo()
-        click.echo(f"Username: {username}")
-        click.echo(f"Password: {password}")
+    click.echo()
+    click.echo(f"Namespace: {spawner_namespace}")
+    click.echo(f"Service: workshop-{session_id}")
+    click.echo(f"Port: 10080")
 
     if hostname:
-        click.echo()
         click.echo(f"URL: http://{hostname}/")
+
+    if username:
+        click.echo(f"Username: {username}")
+        click.echo(f"Password: {password}")
 
 
 @group_session.command("delete")
