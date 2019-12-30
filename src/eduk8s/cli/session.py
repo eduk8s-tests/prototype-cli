@@ -791,7 +791,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         budget,
     )
 
-    # Create the additional resources required for the workshop.
+    # Create the additional resources required for the session.
 
     def _namespaced_resources():
         api_groups = client.resources.parse_api_groups()
@@ -871,7 +871,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                 target_budget,
             )
 
-    # Deploy the actual workshop dashboard for the workshop.
+    # Deploy the actual workshop dashboard for the session.
 
     secret_body = {
         "apiVersion": "v1",

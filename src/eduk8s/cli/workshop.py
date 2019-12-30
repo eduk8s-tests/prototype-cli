@@ -5,6 +5,7 @@ import requests
 
 from kubernetes.client.rest import ApiException
 from openshift.dynamic.exceptions import ResourceNotFoundError
+from openshift.dynamic import Resource, ResourceField, ResourceInstance
 
 from ..cli import root
 from .. import kube
@@ -23,6 +24,15 @@ def _resource_type(ctx, client, api_version, kind):
         return client.resources.get(api_version=api_version, kind=kind)
     except ResourceNotFoundError:
         ctx.fail(f"The server doesn't have a resource type {api_version}/{kind}.")
+
+
+def _resource_item(resource, path, default):
+    item = resource
+    for segment in path.split("."):
+        item = getattr(item, segment)
+        if item is None:
+            return default
+    return item
 
 
 @root.group("workshop")
@@ -80,11 +90,13 @@ def command_workshop_import(ctx, url, filename, name):
 
     namespace_resource = _resource_type(ctx, client, "v1", "Namespace")
 
+    workshop_namespace = workshop_instance.metadata.name
+
     namespace_body = {
         "apiVersion": "v1",
         "kind": "Namespace",
         "metadata": {
-            "name": f"{workshop_instance.metadata.name}",
+            "name": f"{workshop_namespace}",
             "ownerReferences": [
                 {
                     "apiVersion": "training.eduk8s.io/v1alpha1",
@@ -99,6 +111,66 @@ def command_workshop_import(ctx, url, filename, name):
     }
 
     namespace_resource.create(body=namespace_body)
+
+    # Create the additional resources required for the workshop.
+
+    def _namespaced_resources():
+        api_groups = client.resources.parse_api_groups()
+
+        for api in api_groups.values():
+            for domain, items in api.items():
+                for version, group in items.items():
+                    try:
+                        for kind in group.resources:
+                            if domain:
+                                version = f"{domain}/{version}"
+                            resource = client.resources.get(
+                                api_version=version, kind=kind
+                            )
+                            if type(resource) == Resource and resource.namespaced:
+                                yield (version, resource.kind)
+                    except Exception:
+                        pass
+
+    namespaced_resources = set(_namespaced_resources())
+
+    def _substitute_variables(obj):
+        if isinstance(obj, str):
+            obj = obj.replace("$(workshop_namespace)", workshop_namespace)
+            return obj
+        elif isinstance(obj, dict):
+            return {k: _substitute_variables(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [_substitute_variables(v) for v in obj]
+        else:
+            return obj
+
+    objects = _resource_item(workshop_instance, "spec.workshopNamespace.objects", [])
+
+    for object_body in objects:
+        kind = object_body.kind
+        api_version = object_body.apiVersion
+
+        if not (api_version, kind) in namespaced_resources:
+            object_body.metadata.ownerReferences = [
+                dict(
+                    apiVersion="training.eduk8s.io/v1alpha1",
+                    kind="Workshop",
+                    blockOwnerDeletion=True,
+                    controller=True,
+                    name=workshop_instance.metadata.name,
+                    uid=workshop_instance.metadata.uid,
+                )
+            ]
+
+        object_body = ResourceInstance(client, object_body).to_dict()
+        object_body = _substitute_variables(object_body)
+
+        resource = client.resources.get(api_version=api_version, kind=kind)
+
+        target_namespace = object_body["metadata"].get("namespace", workshop_namespace)
+
+        resource.create(namespace=target_namespace, body=object_body)
 
     click.echo(f"workshop.training.eduk8s.io/{workshop_instance.metadata.name} created")
 
