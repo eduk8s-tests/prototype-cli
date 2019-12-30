@@ -40,7 +40,7 @@ spec:
                 deployment:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
-                spawnerNamespace:
+                workshopNamespace:
                   type: object
                   properties:
                     objects:
