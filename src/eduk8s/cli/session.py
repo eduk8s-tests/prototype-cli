@@ -651,7 +651,8 @@ def command_session_deploy(ctx, name):
     while True:
         count += 1
 
-        session_name = "%s-%s" % (name, _generate_random_userid())
+        session_id = _generate_random_userid()
+        session_name = f"{name}-{session_id}"
 
         session_body = {
             "apiVersion": "training.eduk8s.io/v1alpha1",
@@ -725,7 +726,7 @@ def command_session_deploy(ctx, name):
 
     # Create service account under which the workshop runs.
 
-    service_account = session_name
+    service_account = f"user-{session_id}"
 
     service_account_body = {
         "apiVersion": "v1",
