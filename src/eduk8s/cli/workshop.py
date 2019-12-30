@@ -24,7 +24,7 @@ def _resource_type(ctx, client, api_version, kind):
     try:
         return client.resources.get(api_version=api_version, kind=kind)
     except ResourceNotFoundError:
-        ctx.fail("The server doesn't have a resource type %s/%s." % (api_version, kind))
+        ctx.fail(f"The server doesn't have a resource type {api_version}/{kind}.")
 
 
 @root.group("workshop")
@@ -102,9 +102,7 @@ def command_workshop_import(ctx, url, filename, name):
 
     namespace_resource.create(body=namespace_body)
 
-    click.echo(
-        "workshop.training.eduk8s.io/%s created" % workshop_instance.metadata.name
-    )
+    click.echo(f"workshop.training.eduk8s.io/{workshop_instance.metadata.name} created")
 
 
 @group_workshop.command("enable")
@@ -132,7 +130,7 @@ def command_workshop_enable(ctx, name):
         workshop_resource.patch(
             body=workshop_body, content_type="application/merge-patch+json"
         )
-        click.echo("workshop.training.eduk8s.io/%s updated" % name)
+        click.echo(f"workshop.training.eduk8s.io/{name} updated")
     except ApiException as e:
         ctx.fail(e.reason)
 
@@ -162,7 +160,7 @@ def command_workshop_enable(ctx, name):
         workshop_resource.patch(
             body=workshop_body, content_type="application/merge-patch+json"
         )
-        click.echo("workshop.training.eduk8s.io/%s updated" % name)
+        click.echo(f"workshop.training.eduk8s.io/{name} updated")
     except ApiException as e:
         ctx.fail(e.reason)
 
@@ -183,7 +181,7 @@ def command_workshop_delete(ctx, name):
 
     try:
         workshop_resource.delete(name=name)
-        click.echo("workshop.training.eduk8s.io/%s deleted" % name)
+        click.echo(f"workshop.training.eduk8s.io/{name} deleted")
     except ApiException as e:
         ctx.fail(e.reason)
 

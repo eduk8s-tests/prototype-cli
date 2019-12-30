@@ -27,7 +27,7 @@ def _resource_type(ctx, client, api_version, kind):
     try:
         return client.resources.get(api_version=api_version, kind=kind)
     except ResourceNotFoundError:
-        ctx.fail("The server doesn't have a resource type %s/%s." % (api_version, kind))
+        ctx.fail(f"The server doesn't have a resource type {api_version}/{kind}.")
 
 
 @root.group("session")
@@ -630,11 +630,11 @@ def command_session_deploy(ctx, name):
         workshop_instance = workshop_resource.get(name=name)
     except ApiException as e:
         if e.status == 404:
-            ctx.fail("Workshop with name %r does not exist." % name)
+            ctx.fail(f"Workshop with name '{name}' does not exist.")
         raise
 
     if not workshop_instance.status or not workshop_instance.status.enabled:
-        ctx.fail("Workshop with name %r is not enabled." % name)
+        ctx.fail(f"Workshop with name '{name}' is not enabled.")
 
     # Create session object to act as owner for workshop resources
     # and create the corresponding namespace as well.
@@ -688,7 +688,7 @@ def command_session_deploy(ctx, name):
         except ApiException as e:
             if e.status == 409:
                 if count > 10:
-                    ctx.fail("Failed to create session for workshop %s." % name)
+                    ctx.fail(f"Failed to create session for workshop '{name}'.")
                 continue
             else:
                 raise
@@ -764,7 +764,7 @@ def command_session_deploy(ctx, name):
                     try:
                         for kind in group.resources:
                             if domain:
-                                version = "%s/%s" % (domain, version)
+                                version = f"{domain}/{version}"
                             resource = client.resources.get(
                                 api_version=version, kind=kind
                             )
@@ -882,7 +882,7 @@ def command_session_deploy(ctx, name):
 
     service_resource.create(namespace=spawner_namespace, body=service_body)
 
-    click.echo("session.training.eduk8s.io/%s created" % session_name)
+    click.echo(f"session.training.eduk8s.io/{session_name} created")
 
 
 @group_session.command("delete")
@@ -901,6 +901,6 @@ def command_session_deploy(ctx, name):
 
     try:
         session_resource.delete(name=name)
-        click.echo("session.training.eduk8s.io/%s deleted" % name)
+        click.echo(f"session.training.eduk8s.io/{name} deleted")
     except ApiException as e:
         ctx.fail(e.reason)
