@@ -609,7 +609,13 @@ def _setup_limits_and_quotas(
 @click.option(
     "--password", default="", help="Set password for authentication.",
 )
-def command_session_deploy(ctx, name, username, password):
+@click.option(
+    "--hostname", default=None, help="Set hostname for external access.",
+)
+@click.option(
+    "--domain", default=None, help="Domain name to add to generated hostname.",
+)
+def command_session_deploy(ctx, name, username, password, hostname, domain):
     """
     Deploy an instance of a workshop.
     """
@@ -619,6 +625,7 @@ def command_session_deploy(ctx, name, username, password):
     client = kube.client()
 
     deployment_resource = _resource_type(ctx, client, "apps/v1", "Deployment")
+    ingress_resource = _resource_type(ctx, client, "extensions/v1beta1", "Ingress")
     namespace_resource = _resource_type(ctx, client, "v1", "Namespace")
     secret_resource = _resource_type(ctx, client, "v1", "Secret")
     service_resource = _resource_type(ctx, client, "v1", "Service")
@@ -933,11 +940,44 @@ def command_session_deploy(ctx, name, username, password):
 
     service_resource.create(namespace=spawner_namespace, body=service_body)
 
+    if not hostname and domain:
+        hostname = f"{session_name}.{domain}"
+
+    if hostname:
+        ingress_body = {
+            "apiVersion": "extensions/v1beta1",
+            "kind": "Ingress",
+            "metadata": {"name": f"workshop-{session_id}"},
+            "spec": {
+                "rules": [
+                    {
+                        "host": f"{hostname}",
+                        "http": {
+                            "paths": [
+                                {
+                                    "path": "/",
+                                    "backend": {
+                                        "serviceName": f"workshop-{session_id}",
+                                        "servicePort": 10080,
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ]
+            },
+        }
+
+        ingress_resource.create(namespace=spawner_namespace, body=ingress_body)
+
     click.echo(f"session.training.eduk8s.io/{session_name} created")
 
     if username:
         click.echo(f"Username: {username}")
         click.echo(f"Password: {password}")
+
+    if hostname:
+        click.echo(f"URL: http://{hostname}/")
 
 
 @group_session.command("delete")
