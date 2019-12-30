@@ -88,6 +88,9 @@ def command_workshop_import(ctx, url, filename, name):
 
     workshop_instance = workshop_resource.create(body=body)
 
+    workshop_name = workshop_instance.metadata.name
+    workshop_uid = workshop_instance.metadata.uid
+
     namespace_resource = _resource_type(ctx, client, "v1", "Namespace")
 
     workshop_namespace = workshop_instance.metadata.name
@@ -103,8 +106,8 @@ def command_workshop_import(ctx, url, filename, name):
                     "kind": "Workshop",
                     "blockOwnerDeletion": True,
                     "controller": True,
-                    "name": f"{workshop_instance.metadata.name}",
-                    "uid": f"{workshop_instance.metadata.uid}",
+                    "name": f"{workshop_name}",
+                    "uid": f"{workshop_uid}",
                 }
             ],
         },
@@ -136,6 +139,8 @@ def command_workshop_import(ctx, url, filename, name):
 
     def _substitute_variables(obj):
         if isinstance(obj, str):
+            obj = obj.replace("$(workshop_name)", workshop_name)
+            obj = obj.replace("$(workshop_uid)", workshop_uid)
             obj = obj.replace("$(workshop_namespace)", workshop_namespace)
             return obj
         elif isinstance(obj, dict):
@@ -158,8 +163,8 @@ def command_workshop_import(ctx, url, filename, name):
                     kind="Workshop",
                     blockOwnerDeletion=True,
                     controller=True,
-                    name=workshop_instance.metadata.name,
-                    uid=workshop_instance.metadata.uid,
+                    name=workshop_name,
+                    uid=workshop_uid,
                 )
             ]
 

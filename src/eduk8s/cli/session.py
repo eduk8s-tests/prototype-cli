@@ -678,8 +678,9 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
     while True:
         count += 1
 
-        session_id = _generate_random_userid()
-        session_name = f"{name}-{session_id}"
+        user_id = _generate_random_userid()
+
+        session_name = f"{name}-{user_id}"
 
         session_body = {
             "apiVersion": "training.eduk8s.io/v1alpha1",
@@ -720,6 +721,8 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
             else:
                 raise
 
+        session_uid = session_instance.metadata.uid
+
         session_namespace = session_name
 
         namespace_body = {
@@ -733,8 +736,8 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                         "kind": "Session",
                         "blockOwnerDeletion": True,
                         "controller": True,
-                        "name": f"{session_instance.metadata.name}",
-                        "uid": f"{session_instance.metadata.uid}",
+                        "name": f"{session_name}",
+                        "uid": f"{session_uid}",
                     }
                 ],
             },
@@ -753,7 +756,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     # Create service account under which the workshop runs.
 
-    service_account = f"user-{session_id}"
+    service_account = f"user-{user_id}"
 
     service_account_body = {
         "apiVersion": "v1",
@@ -766,8 +769,8 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                     "kind": "Session",
                     "blockOwnerDeletion": True,
                     "controller": True,
-                    "name": f"{session_instance.metadata.name}",
-                    "uid": f"{session_instance.metadata.uid}",
+                    "name": f"{session_name}",
+                    "uid": f"{session_uid}",
                 }
             ],
         },
@@ -813,9 +816,12 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     def _substitute_variables(obj):
         if isinstance(obj, str):
-            obj = obj.replace("$(workshop_namespace)", workshop_namespace)
+            obj = obj.replace("$(user_id)", user_id)
+            obj = obj.replace("$(session_name)", session_name)
+            obj = obj.replace("$(session_uid)", session_uid)
             obj = obj.replace("$(session_namespace)", session_namespace)
             obj = obj.replace("$(service_account)", service_account)
+            obj = obj.replace("$(workshop_namespace)", workshop_namespace)
             return obj
         elif isinstance(obj, dict):
             return {k: _substitute_variables(v) for k, v in obj.items()}
@@ -830,15 +836,15 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         kind = object_body.kind
         api_version = object_body.apiVersion
 
-        if not (api_version, kind) in namespaced_resources:
+        if (api_version, kind) not in namespaced_resources:
             object_body.metadata.ownerReferences = [
                 dict(
                     apiVersion="training.eduk8s.io/v1alpha1",
                     kind="Session",
                     blockOwnerDeletion=True,
                     controller=True,
-                    name=session_instance.metadata.name,
-                    uid=session_instance.metadata.uid,
+                    name=session_name,
+                    uid=session_uid,
                 )
             ]
 
@@ -848,6 +854,21 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         resource = client.resources.get(api_version=api_version, kind=kind)
 
         target_namespace = object_body["metadata"].get("namespace", session_namespace)
+
+        if (
+            api_version,
+            kind,
+        ) in namespaced_resources and target_namespace == workshop_namespace:
+            object_body["metadata"]["ownerReferences"] = [
+                dict(
+                    apiVersion="training.eduk8s.io/v1alpha1",
+                    kind="Session",
+                    blockOwnerDeletion=True,
+                    controller=True,
+                    name=session_name,
+                    uid=session_uid,
+                )
+            ]
 
         resource.create(namespace=target_namespace, body=object_body)
 
@@ -889,15 +910,15 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         "apiVersion": "apps/v1",
         "kind": "Deployment",
         "metadata": {
-            "name": f"workshop-{session_id}",
+            "name": f"workshop-{user_id}",
             "ownerReferences": [
                 {
                     "apiVersion": "training.eduk8s.io/v1alpha1",
                     "kind": "Session",
                     "blockOwnerDeletion": True,
                     "controller": True,
-                    "name": f"{session_instance.metadata.name}",
-                    "uid": f"{session_instance.metadata.uid}",
+                    "name": f"{session_name}",
+                    "uid": f"{session_uid}",
                 }
             ],
         },
@@ -986,15 +1007,15 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         "apiVersion": "v1",
         "kind": "Service",
         "metadata": {
-            "name": f"workshop-{session_id}",
+            "name": f"workshop-{user_id}",
             "ownerReferences": [
                 {
                     "apiVersion": "training.eduk8s.io/v1alpha1",
                     "kind": "Session",
                     "blockOwnerDeletion": True,
                     "controller": True,
-                    "name": f"{session_instance.metadata.name}",
-                    "uid": f"{session_instance.metadata.uid}",
+                    "name": f"{session_name}",
+                    "uid": f"{session_uid}",
                 }
             ],
         },
@@ -1014,7 +1035,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         ingress_body = {
             "apiVersion": "extensions/v1beta1",
             "kind": "Ingress",
-            "metadata": {"name": f"workshop-{session_id}"},
+            "metadata": {"name": f"workshop-{user_id}"},
             "spec": {
                 "rules": [
                     {
@@ -1024,7 +1045,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                                 {
                                     "path": "/",
                                     "backend": {
-                                        "serviceName": f"workshop-{session_id}",
+                                        "serviceName": f"workshop-{user_id}",
                                         "servicePort": 10080,
                                     },
                                 }
@@ -1041,7 +1062,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     click.echo()
     click.echo(f"Namespace: {workshop_namespace}")
-    click.echo(f"Service: workshop-{session_id}")
+    click.echo(f"Service: workshop-{user_id}")
     click.echo(f"Port: 10080")
 
     if hostname:
