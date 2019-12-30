@@ -813,14 +813,27 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     namespaced_resources = set(_namespaced_resources())
 
+    def _substitute_variables(obj):
+        if isinstance(obj, str):
+            obj = obj.replace("$(workshop_namespace)", workshop_namespace)
+            obj = obj.replace("$(session_namespace)", session_namespace)
+            obj = obj.replace("$(service_account)", service_account)
+            return obj
+        elif isinstance(obj, dict):
+            return {k: _substitute_variables(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [_substitute_variables(v) for v in obj]
+        else:
+            return obj
+
     objects = _resource_item(workshop_instance, "spec.sessionNamespace.objects", [])
 
-    for body in objects:
-        kind = body.kind
-        api_version = body.apiVersion
+    for object_body in objects:
+        kind = object_body.kind
+        api_version = object_body.apiVersion
 
         if not (api_version, kind) in namespaced_resources:
-            body.metadata.ownerReferences = [
+            object_body.metadata.ownerReferences = [
                 dict(
                     apiVersion="training.eduk8s.io/v1alpha1",
                     kind="Session",
@@ -831,36 +844,22 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                 )
             ]
 
-        body = ResourceInstance(client, body).to_dict()
-
-        def _substitute_variables(obj):
-            if isinstance(obj, str):
-                obj = obj.replace("$(workshop_namespace)", workshop_namespace)
-                obj = obj.replace("$(session_namespace)", session_namespace)
-                obj = obj.replace("$(service_account)", service_account)
-                return obj
-            elif isinstance(obj, dict):
-                return {k: _substitute_variables(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [_substitute_variables(v) for v in obj]
-            else:
-                return obj
-
-        body = _substitute_variables(body)
+        object_body = ResourceInstance(client, object_body).to_dict()
+        object_body = _substitute_variables(object_body)
 
         resource = client.resources.get(api_version=api_version, kind=kind)
 
-        target_namespace = body["metadata"].get("namespace", session_namespace)
+        target_namespace = object_body["metadata"].get("namespace", session_namespace)
 
-        resource.create(namespace=target_namespace, body=body)
+        resource.create(namespace=target_namespace, body=object_body)
 
         if kind.lower() == "namespace":
-            annotations = body["metadata"].get("annotations", {})
+            annotations = object_body["metadata"].get("annotations", {})
 
             target_role = annotations.get("session/role", role)
             target_budget = annotations.get("session/budget", budget)
 
-            extra_namespace = body["metadata"]["name"]
+            extra_namespace = object_body["metadata"]["name"]
 
             _setup_limits_and_quotas(
                 ctx,
@@ -937,6 +936,51 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
             },
         },
     }
+
+    deployment_patch = _resource_item(workshop_instance, "spec.deployment", None)
+
+    def _serialize_field(field):
+        if isinstance(field, ResourceField):
+            return {k: _serialize_field(v) for k, v in field.__dict__.items()}
+        elif isinstance(field, (list, tuple)):
+            return [_serialize_field(item) for item in field]
+        elif isinstance(field, ResourceInstance):
+            return field.to_dict()
+        else:
+            return field
+
+    def _smart_overlay_merge(target, patch):
+        if isinstance(patch, dict):
+            for key, value in patch.items():
+                if key not in target:
+                    target[key] = value
+                elif type(target[key]) != type(value):
+                    target[key] = value
+                elif isinstance(value, (dict, list)):
+                    _smart_overlay_merge(target[key], value)
+                else:
+                    target[key] = value
+        elif isinstance(patch, list):
+            for patch_item in patch:
+                if isinstance(patch_item, dict) and "name" in patch_item:
+                    for i, target_item in enumerate(target):
+                        if (
+                            isinstance(target_item, dict)
+                            and target_item.get("name") == patch_item["name"]
+                        ):
+                            _smart_overlay_merge(target[i], patch_item)
+                            break
+                    else:
+                        target.append(patch_item)
+                else:
+                    target.append(patch_item)
+
+    deployment_patch = _serialize_field(deployment_patch)
+
+    if deployment_patch:
+        deployment_patch = _substitute_variables(deployment_patch)
+
+        _smart_overlay_merge(deployment_body["spec"]["template"], deployment_patch)
 
     deployment_resource.create(namespace=workshop_namespace, body=deployment_body)
 

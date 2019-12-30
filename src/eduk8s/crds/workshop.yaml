@@ -39,35 +39,7 @@ spec:
                   pattern: '^\d+(s|m|h)$'
                 deployment:
                   type: object
-                  properties:
-                    resources:
-                      type: object
-                      properties:
-                        requests:
-                          type: object
-                          properties:
-                            cpu:
-                              type: string
-                            memory:
-                              type: string
-                        limits:
-                          type: object
-                          properties:
-                            cpu:
-                              type: string
-                            memory:
-                              type: string
-                    env:
-                      type: array
-                      items:
-                        type: object
-                        required:
-                        - name
-                        properties:
-                          name:
-                            type: string
-                          value:
-                            type: string
+                  x-kubernetes-preserve-unknown-fields: true
                 spawnerNamespace:
                   type: object
                   properties:
