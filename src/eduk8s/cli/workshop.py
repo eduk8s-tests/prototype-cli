@@ -145,7 +145,7 @@ def command_workshop_import(ctx, url, filename, name):
         else:
             return obj
 
-    objects = _resource_item(workshop_instance, "spec.workshopNamespace.objects", [])
+    objects = _resource_item(workshop_instance, "spec.workshop.objects", [])
 
     for object_body in objects:
         kind = object_body.kind

@@ -669,10 +669,8 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     count = 0
 
-    role = _resource_item(workshop_instance, "spec.sessionNamespace.role", "admin")
-    budget = _resource_item(
-        workshop_instance, "spec.sessionNamespace.budget", "default"
-    )
+    role = _resource_item(workshop_instance, "spec.session.role", "admin")
+    budget = _resource_item(workshop_instance, "spec.session.budget", "default")
 
     duration = _resource_item(workshop_instance, "spec.duration", "0s")
     timeout = _resource_item(workshop_instance, "spec.timeout", "0s")
@@ -826,7 +824,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         else:
             return obj
 
-    objects = _resource_item(workshop_instance, "spec.sessionNamespace.objects", [])
+    objects = _resource_item(workshop_instance, "spec.session.objects", [])
 
     for object_body in objects:
         kind = object_body.kind
@@ -937,7 +935,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         },
     }
 
-    deployment_patch = _resource_item(workshop_instance, "spec.deployment", None)
+    deployment_patch = _resource_item(workshop_instance, "spec.session.patches", None)
 
     def _serialize_field(field):
         if isinstance(field, ResourceField):

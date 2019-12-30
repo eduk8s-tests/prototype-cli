@@ -37,10 +37,7 @@ spec:
                 duration:
                   type: string
                   pattern: '^\d+(s|m|h)$'
-                deployment:
-                  type: object
-                  x-kubernetes-preserve-unknown-fields: true
-                workshopNamespace:
+                workshop:
                   type: object
                   properties:
                     objects:
@@ -48,13 +45,16 @@ spec:
                       items:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
-                sessionNamespace:
+                session:
                   type: object
                   properties:
                     role:
                       type: string
                     budget:
                       type: string
+                    patches:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
                     objects:
                       type: array
                       items:
