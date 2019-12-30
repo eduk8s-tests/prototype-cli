@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import random
+import string
 
 import yaml
 
@@ -602,7 +603,13 @@ def _setup_limits_and_quotas(
 @group_session.command("deploy")
 @click.pass_context
 @click.argument("name", required=False)
-def command_session_deploy(ctx, name):
+@click.option(
+    "--username", default="", help="Set username for authentication.",
+)
+@click.option(
+    "--password", default="", help="Set password for authentication.",
+)
+def command_session_deploy(ctx, name, username, password):
     """
     Deploy an instance of a workshop.
     """
@@ -848,6 +855,12 @@ def command_session_deploy(ctx, name):
 
     secret_resource.create(namespace=project_namespace, body=secret_body)
 
+    if username and not password:
+        password = "".join(
+            random.choice(string.ascii_letters + string.digits + "!@#$%^&*()?")
+            for _ in range(32)
+        )
+
     deployment_body = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
@@ -882,7 +895,9 @@ def command_session_deploy(ctx, name):
                                 {
                                     "name": "PROJECT_NAMESPACE",
                                     "value": f"{project_namespace}",
-                                }
+                                },
+                                {"name": "AUTH_USERNAME", "value": f"{username}",},
+                                {"name": "AUTH_PASSWORD", "value": f"{password}",},
                             ],
                         }
                     ],
@@ -919,6 +934,10 @@ def command_session_deploy(ctx, name):
     service_resource.create(namespace=spawner_namespace, body=service_body)
 
     click.echo(f"session.training.eduk8s.io/{session_name} created")
+
+    if username:
+        click.echo(f"Username: {username}")
+        click.echo(f"Password: {password}")
 
 
 @group_session.command("delete")
