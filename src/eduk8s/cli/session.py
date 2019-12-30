@@ -973,10 +973,12 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
     click.echo(f"session.training.eduk8s.io/{session_name} created")
 
     if username:
+        click.echo()
         click.echo(f"Username: {username}")
         click.echo(f"Password: {password}")
 
     if hostname:
+        click.echo()
         click.echo(f"URL: http://{hostname}/")
 
 
