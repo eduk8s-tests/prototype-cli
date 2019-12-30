@@ -731,7 +731,19 @@ def command_session_deploy(ctx, name):
     service_account_body = {
         "apiVersion": "v1",
         "kind": "ServiceAccount",
-        "metadata": {"name": f"{service_account}"},
+        "metadata": {
+            "name": f"{service_account}",
+            "ownerReferences": [
+                {
+                    "apiVersion": "training.eduk8s.io/v1alpha1",
+                    "kind": "Session",
+                    "blockOwnerDeletion": True,
+                    "controller": True,
+                    "name": f"{session_instance.metadata.name}",
+                    "uid": f"{session_instance.metadata.uid}",
+                }
+            ],
+        },
     }
 
     service_account_resource.create(
@@ -839,7 +851,19 @@ def command_session_deploy(ctx, name):
     deployment_body = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
-        "metadata": {"name": f"{session_name}"},
+        "metadata": {
+            "name": f"workshop-{session_id}",
+            "ownerReferences": [
+                {
+                    "apiVersion": "training.eduk8s.io/v1alpha1",
+                    "kind": "Session",
+                    "blockOwnerDeletion": True,
+                    "controller": True,
+                    "name": f"{session_instance.metadata.name}",
+                    "uid": f"{session_instance.metadata.uid}",
+                }
+            ],
+        },
         "spec": {
             "replicas": 1,
             "selector": {"matchLabels": {"deployment": "workshop"}},
@@ -872,7 +896,19 @@ def command_session_deploy(ctx, name):
     service_body = {
         "apiVersion": "v1",
         "kind": "Service",
-        "metadata": {"name": f"{session_name}"},
+        "metadata": {
+            "name": f"workshop-{session_id}",
+            "ownerReferences": [
+                {
+                    "apiVersion": "training.eduk8s.io/v1alpha1",
+                    "kind": "Session",
+                    "blockOwnerDeletion": True,
+                    "controller": True,
+                    "name": f"{session_instance.metadata.name}",
+                    "uid": f"{session_instance.metadata.uid}",
+                }
+            ],
+        },
         "spec": {
             "type": "ClusterIP",
             "ports": [{"port": 10080, "protocol": "TCP", "targetPort": 10080}],
