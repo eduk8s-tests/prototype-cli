@@ -31,25 +31,63 @@ spec:
                   type: string
                 image:
                   type: string
-                budget:
-                  type: string
                 timeout:
-                  x-kubernetes-int-or-string: true
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: '^\d+(s|m|h)?$'
+                  type: string
+                  pattern: '^\d+(s|m|h)$'
                 duration:
-                  x-kubernetes-int-or-string: true
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: '^\d+(s|m|h)?$'
-                resources:
-                  type: array
-                  items:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
+                  type: string
+                  pattern: '^\d+(s|m|h)$'
+                deployment:
+                  type: object
+                  properties:
+                    resources:
+                      type: object
+                      properties:
+                        requests:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                            memory:
+                              type: string
+                        limits:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                            memory:
+                              type: string
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                        - name
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                spawnerNamespace:
+                  type: object
+                  properties:
+                    objects:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                sessionNamespace:
+                  type: object
+                  properties:
+                    role:
+                      type: string
+                    budget:
+                      type: string
+                    objects:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
             status:
               type: object
               properties:

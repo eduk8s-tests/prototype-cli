@@ -29,6 +29,15 @@ def _resource_type(ctx, client, api_version, kind):
         ctx.fail(f"The server doesn't have a resource type {api_version}/{kind}.")
 
 
+def _resource_item(resource, path, default):
+    item = resource
+    for segment in path.split("."):
+        item = getattr(item, segment)
+        if item is None:
+            return default
+    return item
+
+
 @root.group("session")
 @click.pass_context
 def group_session(ctx):
@@ -497,7 +506,7 @@ _resource_budgets = {
 
 
 def _setup_limits_and_quotas(
-    ctx, client, spawner_namespace, target_namespace, service_account, role, budget
+    ctx, client, workshop_namespace, target_namespace, service_account, role, budget
 ):
     limit_range_resource = _resource_type(ctx, client, "v1", "LimitRange")
     resource_quota_resource = _resource_type(ctx, client, "v1", "ResourceQuota")
@@ -521,7 +530,7 @@ def _setup_limits_and_quotas(
             {
                 "kind": "ServiceAccount",
                 "name": f"{service_account}",
-                "namespace": f"{spawner_namespace}",
+                "namespace": f"{workshop_namespace}",
             }
         ],
     }
@@ -651,7 +660,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
     # Create session object to act as owner for workshop resources
     # and create the corresponding namespace as well.
 
-    spawner_namespace = name
+    workshop_namespace = name
 
     random_userid_chars = "bcdfghjklmnpqrstvwxyz0123456789"
 
@@ -659,6 +668,14 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         return "".join(random.choice(random_userid_chars) for _ in range(n))
 
     count = 0
+
+    role = _resource_item(workshop_instance, "spec.sessionNamespace.role", "admin")
+    budget = _resource_item(
+        workshop_instance, "spec.sessionNamespace.budget", "default"
+    )
+
+    duration = _resource_item(workshop_instance, "spec.duration", "0s")
+    timeout = _resource_item(workshop_instance, "spec.timeout", "0s")
 
     while True:
         count += 1
@@ -689,9 +706,9 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                 "description": f"{workshop_instance.spec.description}",
                 "url": f"{workshop_instance.spec.url}",
                 "image": f"{workshop_instance.spec.image}",
-                "budget": f"{workshop_instance.spec.budget or 'default'}",
-                "duration": f"{workshop_instance.spec.timeout or '0'}",
-                "timeout": f"{workshop_instance.spec.timeout or '0'}",
+                "budget": f"{budget}",
+                "duration": f"{duration}",
+                "timeout": f"{timeout}",
             },
         }
 
@@ -699,19 +716,19 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
             session_instance = session_resource.create(body=session_body)
         except ApiException as e:
             if e.status == 409:
-                if count > 10:
+                if count > 50:
                     ctx.fail(f"Failed to create session for workshop '{name}'.")
                 continue
             else:
                 raise
 
-        project_namespace = session_name
+        session_namespace = session_name
 
         namespace_body = {
             "apiVersion": "v1",
             "kind": "Namespace",
             "metadata": {
-                "name": f"{project_namespace}",
+                "name": f"{session_namespace}",
                 "ownerReferences": [
                     {
                         "apiVersion": "training.eduk8s.io/v1alpha1",
@@ -759,22 +776,19 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
     }
 
     service_account_resource.create(
-        namespace=spawner_namespace, body=service_account_body
+        namespace=workshop_namespace, body=service_account_body
     )
 
     # Setup project namespace limit ranges and resource quotas.
 
-    default_role = workshop_instance.spec.role or "admin"
-    default_budget = workshop_instance.spec.budget or "default"
-
     _setup_limits_and_quotas(
         ctx,
         client,
-        spawner_namespace,
-        project_namespace,
+        workshop_namespace,
+        session_namespace,
         service_account,
-        default_role,
-        default_budget,
+        role,
+        budget,
     )
 
     # Create the additional resources required for the workshop.
@@ -799,7 +813,9 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     namespaced_resources = set(_namespaced_resources())
 
-    for body in workshop_instance.spec.resources:
+    objects = _resource_item(workshop_instance, "spec.sessionNamespace.objects", [])
+
+    for body in objects:
         kind = body.kind
         api_version = body.apiVersion
 
@@ -819,8 +835,8 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
         def _substitute_variables(obj):
             if isinstance(obj, str):
-                obj = obj.replace("$(spawner_namespace)", spawner_namespace)
-                obj = obj.replace("$(project_namespace)", project_namespace)
+                obj = obj.replace("$(workshop_namespace)", workshop_namespace)
+                obj = obj.replace("$(session_namespace)", session_namespace)
                 obj = obj.replace("$(service_account)", service_account)
                 return obj
             elif isinstance(obj, dict):
@@ -834,20 +850,26 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
         resource = client.resources.get(api_version=api_version, kind=kind)
 
-        target_namespace = body["metadata"].get("namespace", project_namespace)
+        target_namespace = body["metadata"].get("namespace", session_namespace)
 
         resource.create(namespace=target_namespace, body=body)
 
         if kind.lower() == "namespace":
             annotations = body["metadata"].get("annotations", {})
 
-            role = annotations.get("session/role", default_role)
-            budget = annotations.get("session/budget", default_budget)
+            target_role = annotations.get("session/role", role)
+            target_budget = annotations.get("session/budget", budget)
 
-            namespace = body["metadata"]["name"]
+            extra_namespace = body["metadata"]["name"]
 
             _setup_limits_and_quotas(
-                ctx, client, spawner_namespace, namespace, service_account, role, budget
+                ctx,
+                client,
+                workshop_namespace,
+                extra_namespace,
+                service_account,
+                target_role,
+                target_budget,
             )
 
     # Deploy the actual workshop dashboard for the workshop.
@@ -858,7 +880,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         "metadata": {"name": "kubernetes-dashboard-csrf"},
     }
 
-    secret_resource.create(namespace=project_namespace, body=secret_body)
+    secret_resource.create(namespace=session_namespace, body=secret_body)
 
     if username and not password:
         password = "".join(
@@ -892,14 +914,19 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                     "serviceAccountName": f"{service_account}",
                     "containers": [
                         {
-                            "name": "dashboard",
+                            "name": "workshop",
                             "image": f"{workshop_instance.spec.image}",
                             "imagePullPolicy": "Always",
                             "ports": [{"containerPort": 10080, "protocol": "TCP"}],
                             "env": [
+                                # Need to later remove PROJECT_NAMESPACE.
                                 {
                                     "name": "PROJECT_NAMESPACE",
-                                    "value": f"{project_namespace}",
+                                    "value": f"{session_namespace}",
+                                },
+                                {
+                                    "name": "SESSION_NAMESPACE",
+                                    "value": f"{session_namespace}",
                                 },
                                 {"name": "AUTH_USERNAME", "value": f"{username}",},
                                 {"name": "AUTH_PASSWORD", "value": f"{password}",},
@@ -911,7 +938,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         },
     }
 
-    deployment_resource.create(namespace=spawner_namespace, body=deployment_body)
+    deployment_resource.create(namespace=workshop_namespace, body=deployment_body)
 
     service_body = {
         "apiVersion": "v1",
@@ -936,7 +963,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         },
     }
 
-    service_resource.create(namespace=spawner_namespace, body=service_body)
+    service_resource.create(namespace=workshop_namespace, body=service_body)
 
     if not hostname and domain:
         hostname = f"{session_name}.{domain}"
@@ -966,12 +993,12 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
             },
         }
 
-        ingress_resource.create(namespace=spawner_namespace, body=ingress_body)
+        ingress_resource.create(namespace=workshop_namespace, body=ingress_body)
 
     click.echo(f"session.training.eduk8s.io/{session_name} created")
 
     click.echo()
-    click.echo(f"Namespace: {spawner_namespace}")
+    click.echo(f"Namespace: {workshop_namespace}")
     click.echo(f"Service: workshop-{session_id}")
     click.echo(f"Port: 10080")
 
