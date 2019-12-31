@@ -45,7 +45,7 @@ def group_workshop(ctx):
     pass
 
 
-@group_workshop.command("import")
+@group_workshop.command("create")
 @click.pass_context
 @click.argument("url", required=False)
 @click.option(
@@ -54,9 +54,9 @@ def group_workshop(ctx):
 @click.option(
     "--name", default=None, help="Set name to use for the workshop.",
 )
-def command_workshop_import(ctx, url, filename, name):
+def command_workshop_create(ctx, filename, name):
     """
-    Import custom resource describing a workshop.
+    Import workshop and configure resources.
     """
 
     # Load the workshop resource definition.
