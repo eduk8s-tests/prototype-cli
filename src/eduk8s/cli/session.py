@@ -666,6 +666,7 @@ def command_session_create(ctx, name, username, password, hostname, domain, env)
     # Create session object to act as owner for workshop resources
     # and create the corresponding namespace as well.
 
+    workshop_name = name
     workshop_namespace = name
 
     random_userid_chars = "bcdfghjklmnpqrstvwxyz0123456789"
@@ -693,6 +694,7 @@ def command_session_create(ctx, name, username, password, hostname, domain, env)
             "kind": "Session",
             "metadata": {
                 "name": f"{session_name}",
+                "labels": {"workshop": f"{workshop_name}"},
                 "ownerReferences": [
                     {
                         "apiVersion": "training.eduk8s.io/v1alpha1",
