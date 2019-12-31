@@ -85,12 +85,16 @@ def command_workshop_create(ctx, filename, name):
     if name:
         body["metadata"]["name"] = name
 
+    workshop_instance = None
+
     try:
         workshop_instance = workshop_resource.create(body=body)
     except ApiException as e:
-        if e.status == 409:
-            ctx.fail("Workshop already exists.")
-        raise
+        if e.status != 409:
+            raise
+
+    if not workshop_instance:
+        ctx.fail("Workshop already exists.")
 
     # Create a namespace for the workshop.
 
