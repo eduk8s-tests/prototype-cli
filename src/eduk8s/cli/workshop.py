@@ -88,7 +88,12 @@ def command_workshop_import(ctx, url, filename, name):
     if name:
         body["metadata"]["name"] = name
 
-    workshop_instance = workshop_resource.create(body=body)
+    try:
+        workshop_instance = workshop_resource.create(body=body)
+    except ApiException as e:
+        if e.status == 409:
+            ctx.fail("Workshop already exists.")
+        raise
 
     # Create a namespace for the workshop.
 
