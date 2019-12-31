@@ -622,7 +622,10 @@ def _setup_limits_and_quotas(
 @click.option(
     "--domain", default=None, help="Domain name to add to generated hostname.",
 )
-def command_session_create(ctx, name, username, password, hostname, domain):
+@click.option(
+    "--env", multiple=True, help="Environment variables to set for workshop.",
+)
+def command_session_create(ctx, name, username, password, hostname, domain, env):
     """
     Create an instance of a workshop.
     """
@@ -1032,6 +1035,26 @@ def command_session_create(ctx, name, username, password, hostname, domain):
         deployment_patch = _substitute_variables(deployment_patch)
 
         _smart_overlay_merge(deployment_body["spec"]["template"], deployment_patch)
+
+    environment_patch = []
+
+    for item in env:
+        name, value = item.split("=", 1)
+        environment_patch.append({"name": name, "value": value})
+
+    if environment_patch:
+        if (
+            deployment_body["spec"]["template"]["spec"]["containers"][0].get("env")
+            is None
+        ):
+            deployment_body["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ] = environment_patch
+        else:
+            _smart_overlay_merge(
+                deployment_body["spec"]["template"]["spec"]["containers"][0]["env"],
+                environment_patch,
+            )
 
     deployment_resource.create(namespace=workshop_namespace, body=deployment_body)
 
