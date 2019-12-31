@@ -47,7 +47,6 @@ def group_workshop(ctx):
 
 @group_workshop.command("create")
 @click.pass_context
-@click.argument("url", required=False)
 @click.option(
     "-f", "--filename", default=None, help="File contains the workshop to import.",
 )
@@ -61,23 +60,21 @@ def command_workshop_create(ctx, filename, name):
 
     # Load the workshop resource definition.
 
-    if filename:
+    if filename.lower().startswith("http://") or filename.lower().startswith(
+        "https://"
+    ):
+        try:
+            r = requests.get(url)
+            body = yaml.safe_load(r.text)
+        except Exception:
+            ctx.fail("Failed to fetch workshop definition.")
+    else:
         try:
             with open(filename) as fp:
                 body = yaml.safe_load(fp)
         except Exception:
             raise
             ctx.fail("Failed to load workshop definition.")
-
-    elif url:
-        try:
-            r = requests.get(url)
-            body = yaml.safe_load(r.text)
-        except Exception:
-            ctx.fail("Failed to fetch workshop definition.")
-
-    else:
-        ctx.fail()
 
     client = kube.client()
 
