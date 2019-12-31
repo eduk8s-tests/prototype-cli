@@ -788,7 +788,19 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
     cluster_role_binding_body = {
         "apiVersion": "rbac.authorization.k8s.io/v1",
         "kind": "ClusterRoleBinding",
-        "metadata": {"name": f"{workshop_namespace}-console"},
+        "metadata": {
+            "name": f"{session_namespace}-console",
+            "ownerReferences": [
+                {
+                    "apiVersion": "training.eduk8s.io/v1alpha1",
+                    "kind": "Session",
+                    "blockOwnerDeletion": True,
+                    "controller": True,
+                    "name": f"{session_name}",
+                    "uid": f"{session_uid}",
+                }
+            ],
+        },
         "roleRef": {
             "apiGroup": "rbac.authorization.k8s.io",
             "kind": "ClusterRole",
