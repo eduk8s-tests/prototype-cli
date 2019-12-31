@@ -937,11 +937,6 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
                             "imagePullPolicy": "Always",
                             "ports": [{"containerPort": 10080, "protocol": "TCP"}],
                             "env": [
-                                # Need to later remove PROJECT_NAMESPACE.
-                                {
-                                    "name": "PROJECT_NAMESPACE",
-                                    "value": f"{session_namespace}",
-                                },
                                 {
                                     "name": "SESSION_NAMESPACE",
                                     "value": f"{session_namespace}",
