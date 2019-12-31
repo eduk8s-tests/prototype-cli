@@ -631,6 +631,9 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
 
     client = kube.client()
 
+    cluster_role_binding_resource = _resource_type(
+        ctx, client, "rbac.authorization.k8s.io/v1", "ClusterRoleBinding"
+    )
     deployment_resource = _resource_type(ctx, client, "apps/v1", "Deployment")
     ingress_resource = _resource_type(ctx, client, "extensions/v1beta1", "Ingress")
     namespace_resource = _resource_type(ctx, client, "v1", "Namespace")
@@ -779,6 +782,28 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
     service_account_resource.create(
         namespace=workshop_namespace, body=service_account_body
     )
+
+    # Create a role binding for access required by the console.
+
+    cluster_role_binding_body = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "ClusterRoleBinding",
+        "metadata": {"name": f"{workshop_namespace}-console"},
+        "roleRef": {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "ClusterRole",
+            "name": f"{workshop_namespace}-console",
+        },
+        "subjects": [
+            {
+                "kind": "ServiceAccount",
+                "namespace": f"{workshop_namespace}",
+                "name": f"{service_account}",
+            }
+        ],
+    }
+
+    cluster_role_binding_resource.create(body=cluster_role_binding_body)
 
     # Setup project namespace limit ranges and resource quotas.
 

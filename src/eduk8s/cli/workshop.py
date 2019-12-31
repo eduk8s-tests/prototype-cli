@@ -59,6 +59,8 @@ def command_workshop_import(ctx, url, filename, name):
     Import custom resource describing a workshop.
     """
 
+    # Load the workshop resource definition.
+
     if filename:
         try:
             with open(filename) as fp:
@@ -88,6 +90,8 @@ def command_workshop_import(ctx, url, filename, name):
 
     workshop_instance = workshop_resource.create(body=body)
 
+    # Create a namespace for the workshop.
+
     workshop_name = workshop_instance.metadata.name
     workshop_uid = workshop_instance.metadata.uid
 
@@ -114,6 +118,35 @@ def command_workshop_import(ctx, url, filename, name):
     }
 
     namespace_resource.create(body=namespace_body)
+
+    # Create a cluster role to enable console access.
+
+    cluster_role_resource = _resource_type(
+        ctx, client, "rbac.authorization.k8s.io/v1", "ClusterRole"
+    )
+
+    cluster_role_body = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "ClusterRole",
+        "metadata": {
+            "name": f"{workshop_namespace}-console",
+            "ownerReferences": [
+                {
+                    "apiVersion": "training.eduk8s.io/v1alpha1",
+                    "kind": "Workshop",
+                    "blockOwnerDeletion": True,
+                    "controller": True,
+                    "name": f"{workshop_name}",
+                    "uid": f"{workshop_uid}",
+                }
+            ],
+        },
+        "rules": [
+            {"apiGroups": [""], "resources": ["namespaces"], "verbs": ["get", "list"]}
+        ],
+    }
+
+    cluster_role_resource.create(body=cluster_role_body)
 
     # Create the additional resources required for the workshop.
 
