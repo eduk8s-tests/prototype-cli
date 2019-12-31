@@ -961,10 +961,10 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         },
         "spec": {
             "replicas": 1,
-            "selector": {"matchLabels": {"deployment": "workshop"}},
+            "selector": {"matchLabels": {"deployment": f"workshop-{user_id}"}},
             "strategy": {"type": "Recreate"},
             "template": {
-                "metadata": {"labels": {"deployment": "workshop"}},
+                "metadata": {"labels": {"deployment": f"workshop-{user_id}"}},
                 "spec": {
                     "serviceAccountName": f"{service_account}",
                     "containers": [
@@ -1054,7 +1054,7 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         "spec": {
             "type": "ClusterIP",
             "ports": [{"port": 10080, "protocol": "TCP", "targetPort": 10080}],
-            "selector": {"deployment": "workshop"},
+            "selector": {"deployment": f"workshop-{user_id}"},
         },
     }
 
@@ -1067,7 +1067,19 @@ def command_session_deploy(ctx, name, username, password, hostname, domain):
         ingress_body = {
             "apiVersion": "extensions/v1beta1",
             "kind": "Ingress",
-            "metadata": {"name": f"workshop-{user_id}"},
+            "metadata": {
+                "name": f"workshop-{user_id}",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "training.eduk8s.io/v1alpha1",
+                        "kind": "Session",
+                        "blockOwnerDeletion": True,
+                        "controller": True,
+                        "name": f"{session_name}",
+                        "uid": f"{session_uid}",
+                    }
+                ],
+            },
             "spec": {
                 "rules": [
                     {
