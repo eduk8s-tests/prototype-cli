@@ -607,7 +607,7 @@ def _setup_limits_and_quotas(
         )
 
 
-@group_session.command("deploy")
+@group_session.command("create")
 @click.pass_context
 @click.argument("name", required=False)
 @click.option(
@@ -622,9 +622,9 @@ def _setup_limits_and_quotas(
 @click.option(
     "--domain", default=None, help="Domain name to add to generated hostname.",
 )
-def command_session_deploy(ctx, name, username, password, hostname, domain):
+def command_session_create(ctx, name, username, password, hostname, domain):
     """
-    Deploy an instance of a workshop.
+    Create an instance of a workshop.
     """
 
     # Setup Kubernetes client and make sure custom resources defined.
