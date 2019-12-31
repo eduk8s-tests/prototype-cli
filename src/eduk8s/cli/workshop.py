@@ -64,7 +64,7 @@ def command_workshop_create(ctx, filename, name):
         "https://"
     ):
         try:
-            r = requests.get(url)
+            r = requests.get(filename)
             body = yaml.safe_load(r.text)
         except Exception:
             ctx.fail("Failed to fetch workshop definition.")
